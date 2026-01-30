@@ -1,10 +1,15 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import { WeatherPanel } from './WeatherPanel';
-import { getCurrentWeather, reverseGeocode } from '../lib/api';
+import { useEffect, useRef, useState } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { WeatherInfoPanel } from "./WeatherInfoPanel";
+import { TimeSliderPanel } from "./TimeSliderPanel";
+import {
+  getCurrentWeather,
+  getForecastWeather,
+  reverseGeocode,
+} from "../lib/api";
 
 interface MapProps {
   center: [number, number];
@@ -30,7 +35,24 @@ interface WeatherData {
 
 // Helper function to convert wind degrees to compass direction
 function getWindDirection(degrees: number): string {
-  const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  const directions = [
+    "N",
+    "NNE",
+    "NE",
+    "ENE",
+    "E",
+    "ESE",
+    "SE",
+    "SSE",
+    "S",
+    "SSW",
+    "SW",
+    "WSW",
+    "W",
+    "WNW",
+    "NW",
+    "NNW",
+  ];
   const index = Math.round(degrees / 22.5) % 16;
   return directions[index];
 }
@@ -38,31 +60,39 @@ function getWindDirection(degrees: number): string {
 export default function Map({
   center,
   zoom = 9.5,
-  style = 'https://tiles.openfreemap.org/styles/positron',
-  className = '',
-  height = '100vh'
+  style = "https://tiles.openfreemap.org/styles/positron",
+  className = "",
+  height = "100vh",
 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [forecastData, setForecastData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showWeatherPanel, setShowWeatherPanel] = useState(false);
+  const [timeSliderIndex, setTimeSliderIndex] = useState(0);
 
   // Function to fetch weather data for given coordinates
-  const fetchWeatherData = async (coordinates: { lat: number; lng: number }) => {
+  const fetchWeatherData = async (coordinates: {
+    lat: number;
+    lng: number;
+  }) => {
     setIsLoading(true);
-    
+
     try {
-      // Call weather API and reverse geocoding in parallel
-      const [weatherResponse, locationResponse] = await Promise.all([
-        getCurrentWeather(coordinates.lat, coordinates.lng),
-        reverseGeocode(coordinates.lat, coordinates.lng, 1)
-      ]);
+      // Call current weather, forecast, and reverse geocoding in parallel
+      const [weatherResponse, forecastResponse, locationResponse] =
+        await Promise.all([
+          getCurrentWeather(coordinates.lat, coordinates.lng),
+          getForecastWeather(coordinates.lat, coordinates.lng),
+          reverseGeocode(coordinates.lat, coordinates.lng, 1),
+        ]);
 
       // Get location name from reverse geocoding
-      const locationName = locationResponse.length > 0 
-        ? `${locationResponse[0].name}${locationResponse[0].state ? `, ${locationResponse[0].state}` : ''}`
-        : 'Unknown Location';
+      const locationName =
+        locationResponse.length > 0
+          ? `${locationResponse[0].name}${locationResponse[0].state ? `, ${locationResponse[0].state}` : ""}`
+          : "Unknown Location";
 
       // Transform API response to WeatherData format
       const transformedWeatherData: WeatherData = {
@@ -72,23 +102,27 @@ export default function Map({
         feelsLike: weatherResponse.main.feels_like,
         windSpeed: weatherResponse.wind?.speed,
         windDirection: weatherResponse.wind?.deg,
-        windDirectionText: weatherResponse.wind?.deg ? getWindDirection(weatherResponse.wind.deg) : undefined,
+        windDirectionText: weatherResponse.wind?.deg
+          ? getWindDirection(weatherResponse.wind.deg)
+          : undefined,
         humidity: weatherResponse.main.humidity,
         clouds: weatherResponse.clouds.all,
         pressure: weatherResponse.main.pressure,
-        weatherIcon: weatherResponse.weather[0]?.icon
+        weatherIcon: weatherResponse.weather[0]?.icon,
       };
 
       setWeatherData(transformedWeatherData);
+      setForecastData(forecastResponse);
+      setTimeSliderIndex(0); // Reset to "Now" when new location is clicked
       setShowWeatherPanel(true);
-      
     } catch (error) {
-      console.error('Error fetching weather data:', error);
+      console.error("Error fetching weather data:", error);
       // Show panel with coordinates only if API calls fail
       setWeatherData({
-        location: 'Unable to load weather data',
-        coordinates: coordinates
+        location: "Unable to load weather data",
+        coordinates: coordinates,
       });
+      setForecastData(null);
       setShowWeatherPanel(true);
     } finally {
       setIsLoading(false);
@@ -97,7 +131,7 @@ export default function Map({
 
   // Handle map click events
   const handleMapClick = async (coordinates: { lat: number; lng: number }) => {
-    console.log('Map clicked at coordinates:', coordinates);
+    console.log("Map clicked at coordinates:", coordinates);
     await fetchWeatherData(coordinates);
   };
 
@@ -112,11 +146,11 @@ export default function Map({
     });
 
     // Add click event listener
-    map.current.on('click', (e) => {
+    map.current.on("click", (e) => {
       const coordinate = map.current!.unproject(e.point);
       handleMapClick({
         lat: coordinate.lat,
-        lng: coordinate.lng
+        lng: coordinate.lng,
       });
     });
 
@@ -152,23 +186,37 @@ export default function Map({
 
   return (
     <div className="relative w-full h-full">
-      <div 
-        ref={mapContainer} 
+      <div
+        ref={mapContainer}
         className={`w-full ${className}`}
         style={{ height }}
       />
-      
+
       {/* Weather Panel positioned in bottom right corner */}
-      <div className="absolute bottom-32 right-6 z-10">
-        <WeatherPanel 
+      <div className="absolute bottom-16 right-6 z-10">
+        <WeatherInfoPanel
           weatherData={weatherData || undefined}
+          forecastData={forecastData || undefined}
+          timeSliderIndex={timeSliderIndex}
           isVisible={showWeatherPanel && !isLoading}
         />
       </div>
-      
+
+      {/* Time Slider positioned at bottom center, aligned with weather panel */}
+      {(weatherData || forecastData) && showWeatherPanel && !isLoading && (
+        <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10">
+          <TimeSliderPanel
+            forecastData={forecastData || undefined}
+            currentIndex={timeSliderIndex}
+            onIndexChange={setTimeSliderIndex}
+            showCurrentWeather={!!weatherData}
+          />
+        </div>
+      )}
+
       {/* Loading indicator */}
       {isLoading && (
-        <div className="absolute bottom-32 right-6 z-10">
+        <div className="absolute bottom-8 right-6 z-10">
           <div className="bg-white/80 backdrop-blur-sm border border-white/20 shadow-lg rounded-lg p-4">
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-gray-600"></div>

@@ -88,6 +88,70 @@ export interface CurrentWeatherData {
   source: string;
 }
 
+// OpenWeatherMap 5-Day Forecast API Types
+export interface ForecastWeatherData {
+  cod: string;
+  message: number;
+  cnt: number;
+  list: Array<{
+    dt: number;
+    main: {
+      temp: number;
+      feels_like: number;
+      temp_min: number;
+      temp_max: number;
+      pressure: number;
+      sea_level?: number;
+      grnd_level?: number;
+      humidity: number;
+      temp_kf: number;
+    };
+    weather: Array<{
+      id: number;
+      main: string;
+      description: string;
+      icon: string;
+    }>;
+    clouds: {
+      all: number;
+    };
+    wind: {
+      speed: number;
+      deg: number;
+      gust?: number;
+    };
+    visibility: number;
+    pop: number; // Probability of precipitation
+    rain?: {
+      '3h': number;
+    };
+    snow?: {
+      '3h': number;
+    };
+    sys: {
+      pod: string; // Part of day (n-night, d-day)
+    };
+    dt_txt: string;
+  }>;
+  city: {
+    id: number;
+    name: string;
+    coord: {
+      lat: number;
+      lon: number;
+    };
+    country: string;
+    population: number;
+    timezone: number;
+    sunrise: number;
+    sunset: number;
+  };
+  // Additional fields added by our API
+  units: string;
+  timestamp: string;
+  source: string;
+}
+
 // Weather API parameter types
 export type WeatherUnits = 'standard' | 'metric' | 'imperial';
 
@@ -96,6 +160,10 @@ export interface WeatherParams {
   lon: number;
   units?: WeatherUnits;
   lang?: string;
+}
+
+export interface ForecastParams extends WeatherParams {
+  cnt?: number; // Number of timestamps to return
 }
 
 // Generic API response wrapper

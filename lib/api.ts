@@ -3,6 +3,7 @@
 import type { 
   MapSearchResult, 
   CurrentWeatherData, 
+  ForecastWeatherData,
   WeatherUnits,
   ReverseGeocodingResponse,
   ReverseGeocodingResult
@@ -84,6 +85,52 @@ export async function getWeatherByCoordinates(
 ): Promise<CurrentWeatherData> {
   const [lon, lat] = coordinates;
   return getCurrentWeather(lat, lon, units, lang);
+}
+
+// 5-day weather forecast API call
+export async function getForecastWeather(
+  lat: number, 
+  lon: number, 
+  units: WeatherUnits = 'metric',
+  lang: string = 'en',
+  cnt?: number
+): Promise<ForecastWeatherData> {
+  try {
+    const params = new URLSearchParams({
+      lat: lat.toString(),
+      lon: lon.toString(),
+      units,
+      lang
+    });
+    
+    if (cnt) {
+      params.set('cnt', cnt.toString());
+    }
+    
+    const response = await fetch(`/api/forecast-weather?${params}`);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Forecast API failed: ${response.status}`);
+    }
+    
+    return await response.json();
+    
+  } catch (error) {
+    console.error('Forecast API error:', error);
+    throw error;
+  }
+}
+
+// Get 5-day forecast by coordinates (helper function)
+export async function getForecastByCoordinates(
+  coordinates: [number, number],
+  units?: WeatherUnits,
+  lang?: string,
+  cnt?: number
+): Promise<ForecastWeatherData> {
+  const [lon, lat] = coordinates;
+  return getForecastWeather(lat, lon, units, lang, cnt);
 }
 
 // Generic API helper

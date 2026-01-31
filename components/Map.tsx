@@ -77,12 +77,17 @@ export default function Map({
   const [currentWeatherLayer, setCurrentWeatherLayer] = useState<WeatherLayerType>("temperature");
   const [weatherLayerSource, setWeatherLayerSource] = useState<string | null>(null);
   const [weatherLayerId, setWeatherLayerId] = useState<string | null>(null);
+  
+  // REF to track slider index - this is ALWAYS current, no stale closure issues
+  const sliderIndexRef = useRef(timeSliderIndex);
+  sliderIndexRef.current = timeSliderIndex; // Always sync with state
 
   // Function to fetch weather data for given coordinates
   const fetchWeatherData = async (coordinates: {
     lat: number;
     lng: number;
   }) => {
+    console.log('🌍 Fetching weather data for coordinates:', coordinates);
     setIsLoading(true);
 
     try {
@@ -119,21 +124,13 @@ export default function Map({
 
       setWeatherData(transformedWeatherData);
       setForecastData(forecastResponse);
-      setTimeSliderIndex(0); // Reset to "Now" when new location is clicked
       setShowWeatherPanel(true);
       
-      // Update weather layer with current weather timestamp
-      if (map.current && currentWeatherLayer) {
-        try {
-          const layerConfig = await getWeatherLayerConfig(currentWeatherLayer);
-          handleWeatherLayerChange(layerConfig);
-        } catch (layerError) {
-          console.error('Failed to update weather layer:', layerError);
-        }
-      }
+      // DO NOT UPDATE WEATHER LAYERS HERE - Let slider handle it!
+      console.log('📊 Weather data updated. Slider will control weather layers.');
+      
     } catch (error) {
       console.error("Error fetching weather data:", error);
-      // Show panel with coordinates only if API calls fail
       setWeatherData({
         location: "Unable to load weather data",
         coordinates: coordinates,
@@ -149,17 +146,26 @@ export default function Map({
 
   // Helper function to clear all weather layers
   const clearAllWeatherLayers = () => {
-    if (!map.current || !map.current.isStyleLoaded()) return;
+    console.log('🗑️ Clearing all weather layers...');
+    
+    if (!map.current) {
+      console.log('⚠️ No map reference, cannot clear layers');
+      return;
+    }
+    
+    // Don't check isStyleLoaded - we need to clear immediately
     
     // Clear state-tracked layers
-    if (weatherLayerId && map.current.getLayer(weatherLayerId)) {
+    if (weatherLayerId && map.current.getLayer && map.current.getLayer(weatherLayerId)) {
       try {
         map.current.removeLayer(weatherLayerId);
+        console.log('✅ Removed weather layer:', weatherLayerId);
       } catch (e) { console.warn('Error removing layer:', e); }
     }
-    if (weatherLayerSource && map.current.getSource(weatherLayerSource)) {
+    if (weatherLayerSource && map.current.getSource && map.current.getSource(weatherLayerSource)) {
       try {
         map.current.removeSource(weatherLayerSource);
+        console.log('✅ Removed weather source:', weatherLayerSource);
       } catch (e) { console.warn('Error removing source:', e); }
     }
     
@@ -169,38 +175,53 @@ export default function Map({
       const layerId = `weather-${type}`;
       const sourceId = `weather-${type}-source`;
       
-      if (map.current!.getLayer(layerId)) {
-        try {
+      try {
+        if (map.current!.getLayer && map.current!.getLayer(layerId)) {
           map.current!.removeLayer(layerId);
-        } catch (e) { console.warn(`Error removing layer ${layerId}:`, e); }
-      }
+          console.log('🧹 Cleaned orphaned layer:', layerId);
+        }
+      } catch (e) { /* ignore */ }
       
-      if (map.current!.getSource(sourceId)) {
-        try {
+      try {
+        if (map.current!.getSource && map.current!.getSource(sourceId)) {
           map.current!.removeSource(sourceId);
-        } catch (e) { console.warn(`Error removing source ${sourceId}:`, e); }
-      }
+          console.log('🧹 Cleaned orphaned source:', sourceId);
+        }
+      } catch (e) { /* ignore */ }
     });
     
-    // Reset state
+    // Reset state immediately
     setWeatherLayerSource(null);
     setWeatherLayerId(null);
+    console.log('✅ Weather layer state cleared');
   };
 
   // Handle weather layer changes
   const handleWeatherLayerChange = (layerConfig: any) => {
     if (!map.current || !layerConfig) return;
 
+    // CRITICAL: Use REF to check current slider index (not stale closure)
+    const currentSliderIndex = sliderIndexRef.current;
+    console.log('🎯 handleWeatherLayerChange called - Slider index from REF:', currentSliderIndex);
+    
+    if (currentSliderIndex !== 0) {
+      console.log('🚫 BLOCKED: Slider not at 0 (current:', currentSliderIndex, ')');
+      return;
+    }
+
     // Check if map style is loaded before adding layers
     if (!map.current.isStyleLoaded()) {
       console.log('Map style still loading, waiting...');
-      // Wait for style to load and then try again
       map.current.once('styledata', () => {
-        handleWeatherLayerChange(layerConfig);
+        // Re-check slider index when style loads
+        if (sliderIndexRef.current === 0) {
+          handleWeatherLayerChange(layerConfig);
+        }
       });
       return;
     }
 
+    console.log('✅ Adding weather layer for current time');
     // Clear all existing weather layers first
     clearAllWeatherLayers();
 
@@ -231,24 +252,7 @@ export default function Map({
     }
   };
 
-  // Update weather layer when time changes
-  const updateWeatherLayerForTime = async () => {
-    if (!currentWeatherLayer) return;
-    
-    // Weather Maps 1.0 only supports current weather (timeSliderIndex === 0)
-    if (timeSliderIndex !== 0) {
-      // Clear weather layers for forecast times
-      clearAllWeatherLayers();
-      return;
-    }
-    
-    try {
-      const layerConfig = await getWeatherLayerConfig(currentWeatherLayer);
-      handleWeatherLayerChange(layerConfig);
-    } catch (error) {
-      console.error('Failed to update weather layer for time:', error);
-    }
-  };
+  // OLD FUNCTION REMOVED - Now handled by SUPREME SLIDER CONTROLLER
 
   // Handle map click events
   const handleMapClick = async (coordinates: { lat: number; lng: number }) => {
@@ -296,11 +300,12 @@ export default function Map({
     };
   }, []);
 
-  // Load initial weather data for the center coordinates
+  // Load initial weather data for the center coordinates (ONE TIME ONLY)
   useEffect(() => {
+    console.log('🚀 INITIAL LOAD - Loading weather data for center coordinates');
     const initialCoordinates = { lat: center[1], lng: center[0] };
     fetchWeatherData(initialCoordinates);
-  }, [center[0], center[1]]);
+  }, []); // Empty deps = run once only
 
   // Separate effect to update map center and zoom when props change
   useEffect(() => {
@@ -317,44 +322,48 @@ export default function Map({
     }
   }, [style]);
 
-  // Update weather layer when time slider index changes
+  // 👑 SUPREME SLIDER CONTROLLER - The only source of truth for weather layers
   useEffect(() => {
-    if (map.current && currentWeatherLayer && (weatherData || forecastData)) {
-      updateWeatherLayerForTime();
-    }
-  }, [timeSliderIndex, forecastData]);
-
-  // Update weather layer when forecast data is first loaded
-  useEffect(() => {
-    if (map.current && currentWeatherLayer && forecastData && timeSliderIndex === 0) {
-      updateWeatherLayerForTime();
-    }
-  }, [forecastData]);
-
-  // Load initial temperature layer on map ready (only for current weather)
-  useEffect(() => {
-    const loadInitialLayer = async () => {
-      if (map.current && !weatherLayerId && timeSliderIndex === 0) {
-        // Wait for map style to be loaded
-        if (!map.current.isStyleLoaded()) {
-          map.current.once('styledata', loadInitialLayer);
-          return;
+    const isAtZero = timeSliderIndex === 0;
+    console.log('👑 SLIDER SUPREME CONTROLLER - Index:', timeSliderIndex, 'isAtZero:', isAtZero);
+    
+    if (isAtZero) {
+      // SLIDER AT 0: Show weather layers (after map is ready)
+      console.log('✅ SLIDER AT 0: Should show weather layers');
+      
+      // Wait for map to be ready before loading
+      if (map.current?.isStyleLoaded()) {
+        if (currentWeatherLayer && !weatherLayerId) {
+          console.log('📥 Loading initial weather layer:', currentWeatherLayer);
+          loadWeatherLayerForSlider();
         }
-        
-        try {
-          // Load current temperature layer by default
-          const layerConfig = await getWeatherLayerConfig('temperature');
-          handleWeatherLayerChange(layerConfig);
-        } catch (error) {
-          console.error('Failed to load initial temperature layer:', error);
-        }
+      } else {
+        console.log('⏳ Map not ready yet, will load when ready');
+        // Set up listener to load when map is ready
+        map.current?.once('load', () => {
+          if (sliderIndexRef.current === 0 && !weatherLayerId) {
+            console.log('🗺️ Map loaded, now loading weather layer');
+            loadWeatherLayerForSlider();
+          }
+        });
       }
-    };
+    } else {
+      // SLIDER NOT AT 0: Clear all weather layers immediately
+      console.log('❌ SLIDER NOT AT 0 (index:', timeSliderIndex, '): Clearing weather layers');
+      clearAllWeatherLayers();
+    }
+  }, [timeSliderIndex]);
 
-    // Wait a bit for map to be fully initialized, then load
-    const timer = setTimeout(loadInitialLayer, 1000);
-    return () => clearTimeout(timer);
-  }, [map.current, timeSliderIndex]);
+  // Helper function to load weather layers when slider is at index 0
+  const loadWeatherLayerForSlider = async () => {
+    try {
+      const layerConfig = await getWeatherLayerConfig(currentWeatherLayer);
+      // This will only succeed if slider is still at 0 (double-check in handleWeatherLayerChange)
+      handleWeatherLayerChange(layerConfig);
+    } catch (error) {
+      console.error('Failed to load weather layer:', error);
+    }
+  };
 
   return (
     <div className="relative w-full h-full">

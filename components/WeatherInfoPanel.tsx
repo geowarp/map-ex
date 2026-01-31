@@ -90,7 +90,7 @@ export function WeatherInfoPanel({
             <CardTitle className="text-xl font-bold text-foreground">
               {displayData.location || "Selected Location"}
             </CardTitle>
-            <CardDescription className="text-muted-foreground">
+            <CardDescription className="text-gray-700">
               {displayData.coordinates
                 ? `${displayData.coordinates.lat.toFixed(2)}, ${displayData.coordinates.lng.toFixed(2)}`
                 : "-28.54, 142.39"}
@@ -119,9 +119,9 @@ export function WeatherInfoPanel({
             aria-label={isExpanded ? "Hide details" : "Show details"}
           >
             {isExpanded ? (
-              <ChevronUp className="h-6 w-6 text-muted-foreground" />
+              <ChevronUp className="h-6 w-6 text-gray-600" />
             ) : (
-              <ChevronDown className="h-6 w-6 text-muted-foreground" />
+              <ChevronDown className="h-6 w-6 text-gray-600" />
             )}
           </button>
         </div>
@@ -189,7 +189,7 @@ function WeatherRow({
 }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-gray-700">{label}</span>
       <span className="font-medium text-foreground">{value}</span>
     </div>
   );

@@ -1,10 +1,10 @@
 // Utility functions for making API calls to your Next.js API routes
 
 import type { 
-  MapSearchResult, 
   CurrentWeatherData, 
   ForecastWeatherData,
   WeatherUnits,
+  WeatherLayerType,
   ReverseGeocodingResponse,
   ReverseGeocodingResult
 } from './types';
@@ -132,6 +132,38 @@ export async function getForecastByCoordinates(
   const [lon, lat] = coordinates;
   return getForecastWeather(lat, lon, units, lang, cnt);
 }
+
+// Weather Map Layers API functions
+
+// Get weather layer configuration from API route (Weather Maps 1.0)
+export async function getWeatherLayerConfig(
+  layerType: WeatherLayerType,
+  opacity?: number
+): Promise<any> {
+  try {
+    const params = new URLSearchParams({
+      layer: layerType
+    });
+    
+    if (opacity !== undefined) params.set('opacity', opacity.toString());
+    
+const response = await fetch(`/api/weather-map-layers?${params}`);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Weather layer API failed: ${response.status}`);
+    }
+    
+    return await response.json();
+    
+  } catch (error) {
+    console.error('Weather layer API error:', error);
+    throw error;
+  }
+}
+
+
+// Legacy functions removed - using API route approach for Weather Maps 1.0
 
 // Generic API helper
 export async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {

@@ -5,11 +5,14 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { WeatherInfoPanel } from "./WeatherInfoPanel";
 import { TimeSliderPanel } from "./TimeSliderPanel";
+import { WeatherLayersPanel } from "./WeatherLayersPanel";
 import {
   getCurrentWeather,
   getForecastWeather,
   reverseGeocode,
+  getWeatherLayerConfig,
 } from "../lib/api";
+import type { WeatherLayerType } from "../lib/types";
 
 interface MapProps {
   center: [number, number];
@@ -60,7 +63,7 @@ function getWindDirection(degrees: number): string {
 export default function Map({
   center,
   zoom = 9.5,
-  style = "https://tiles.openfreemap.org/styles/positron",
+  style = "https://tiles.openfreemap.org/styles/dark",
   className = "",
   height = "100vh",
 }: MapProps) {
@@ -71,6 +74,9 @@ export default function Map({
   const [isLoading, setIsLoading] = useState(false);
   const [showWeatherPanel, setShowWeatherPanel] = useState(false);
   const [timeSliderIndex, setTimeSliderIndex] = useState(0);
+  const [currentWeatherLayer, setCurrentWeatherLayer] = useState<WeatherLayerType>("temperature");
+  const [weatherLayerSource, setWeatherLayerSource] = useState<string | null>(null);
+  const [weatherLayerId, setWeatherLayerId] = useState<string | null>(null);
 
   // Function to fetch weather data for given coordinates
   const fetchWeatherData = async (coordinates: {
@@ -115,6 +121,16 @@ export default function Map({
       setForecastData(forecastResponse);
       setTimeSliderIndex(0); // Reset to "Now" when new location is clicked
       setShowWeatherPanel(true);
+      
+      // Update weather layer with current weather timestamp
+      if (map.current && currentWeatherLayer) {
+        try {
+          const layerConfig = await getWeatherLayerConfig(currentWeatherLayer);
+          handleWeatherLayerChange(layerConfig);
+        } catch (layerError) {
+          console.error('Failed to update weather layer:', layerError);
+        }
+      }
     } catch (error) {
       console.error("Error fetching weather data:", error);
       // Show panel with coordinates only if API calls fail
@@ -126,6 +142,111 @@ export default function Map({
       setShowWeatherPanel(true);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Timestamp function removed - Weather Maps 1.0 only shows current weather
+
+  // Helper function to clear all weather layers
+  const clearAllWeatherLayers = () => {
+    if (!map.current || !map.current.isStyleLoaded()) return;
+    
+    // Clear state-tracked layers
+    if (weatherLayerId && map.current.getLayer(weatherLayerId)) {
+      try {
+        map.current.removeLayer(weatherLayerId);
+      } catch (e) { console.warn('Error removing layer:', e); }
+    }
+    if (weatherLayerSource && map.current.getSource(weatherLayerSource)) {
+      try {
+        map.current.removeSource(weatherLayerSource);
+      } catch (e) { console.warn('Error removing source:', e); }
+    }
+    
+    // Clear any potential orphaned layers/sources
+    const layerTypes = ['precipitation', 'clouds', 'temperature', 'wind_arrows', 'pressure'];
+    layerTypes.forEach(type => {
+      const layerId = `weather-${type}`;
+      const sourceId = `weather-${type}-source`;
+      
+      if (map.current!.getLayer(layerId)) {
+        try {
+          map.current!.removeLayer(layerId);
+        } catch (e) { console.warn(`Error removing layer ${layerId}:`, e); }
+      }
+      
+      if (map.current!.getSource(sourceId)) {
+        try {
+          map.current!.removeSource(sourceId);
+        } catch (e) { console.warn(`Error removing source ${sourceId}:`, e); }
+      }
+    });
+    
+    // Reset state
+    setWeatherLayerSource(null);
+    setWeatherLayerId(null);
+  };
+
+  // Handle weather layer changes
+  const handleWeatherLayerChange = (layerConfig: any) => {
+    if (!map.current || !layerConfig) return;
+
+    // Check if map style is loaded before adding layers
+    if (!map.current.isStyleLoaded()) {
+      console.log('Map style still loading, waiting...');
+      // Wait for style to load and then try again
+      map.current.once('styledata', () => {
+        handleWeatherLayerChange(layerConfig);
+      });
+      return;
+    }
+
+    // Clear all existing weather layers first
+    clearAllWeatherLayers();
+
+    const sourceId = layerConfig.sourceConfig.id || `weather-${layerConfig.layerType}-source`;
+    const layerId = layerConfig.layerConfig.id || `weather-${layerConfig.layerType}`;
+
+    // Add new weather layer
+    try {
+      // Add source
+      map.current.addSource(sourceId, layerConfig.sourceConfig);
+
+      // Add layer
+      map.current.addLayer({
+        ...layerConfig.layerConfig,
+        id: layerId,
+        source: sourceId
+      });
+
+      // Update state only after successful addition
+      setWeatherLayerSource(sourceId);
+      setWeatherLayerId(layerId);
+      setCurrentWeatherLayer(layerConfig.layerType);
+      
+    } catch (error) {
+      console.error('Failed to add weather layer:', error);
+      // Clear everything on error
+      clearAllWeatherLayers();
+    }
+  };
+
+  // Update weather layer when time changes
+  const updateWeatherLayerForTime = async () => {
+    if (!currentWeatherLayer) return;
+    
+    // Weather Maps 1.0 only supports current weather (timeSliderIndex === 0)
+    if (timeSliderIndex !== 0) {
+      // Clear weather layers for forecast times
+      clearAllWeatherLayers();
+      return;
+    }
+    
+    try {
+      const layerConfig = await getWeatherLayerConfig(currentWeatherLayer);
+      handleWeatherLayerChange(layerConfig);
+    } catch (error) {
+      console.error('Failed to update weather layer for time:', error);
     }
   };
 
@@ -157,6 +278,18 @@ export default function Map({
     // Clean up on unmount
     return () => {
       if (map.current) {
+        // Clean up weather layers before removing map
+        try {
+          if (weatherLayerId && map.current.getLayer(weatherLayerId)) {
+            map.current.removeLayer(weatherLayerId);
+          }
+          if (weatherLayerSource && map.current.getSource(weatherLayerSource)) {
+            map.current.removeSource(weatherLayerSource);
+          }
+        } catch (error) {
+          console.warn('Error cleaning up weather layers:', error);
+        }
+        
         map.current.remove();
         map.current = null;
       }
@@ -184,6 +317,45 @@ export default function Map({
     }
   }, [style]);
 
+  // Update weather layer when time slider index changes
+  useEffect(() => {
+    if (map.current && currentWeatherLayer && (weatherData || forecastData)) {
+      updateWeatherLayerForTime();
+    }
+  }, [timeSliderIndex, forecastData]);
+
+  // Update weather layer when forecast data is first loaded
+  useEffect(() => {
+    if (map.current && currentWeatherLayer && forecastData && timeSliderIndex === 0) {
+      updateWeatherLayerForTime();
+    }
+  }, [forecastData]);
+
+  // Load initial temperature layer on map ready (only for current weather)
+  useEffect(() => {
+    const loadInitialLayer = async () => {
+      if (map.current && !weatherLayerId && timeSliderIndex === 0) {
+        // Wait for map style to be loaded
+        if (!map.current.isStyleLoaded()) {
+          map.current.once('styledata', loadInitialLayer);
+          return;
+        }
+        
+        try {
+          // Load current temperature layer by default
+          const layerConfig = await getWeatherLayerConfig('temperature');
+          handleWeatherLayerChange(layerConfig);
+        } catch (error) {
+          console.error('Failed to load initial temperature layer:', error);
+        }
+      }
+    };
+
+    // Wait a bit for map to be fully initialized, then load
+    const timer = setTimeout(loadInitialLayer, 1000);
+    return () => clearTimeout(timer);
+  }, [map.current, timeSliderIndex]);
+
   return (
     <div className="relative w-full h-full">
       <div
@@ -191,6 +363,16 @@ export default function Map({
         className={`w-full ${className}`}
         style={{ height }}
       />
+
+      {/* Weather Layers Panel positioned in top left corner */}
+      <div className="absolute top-16 left-6 z-10">
+        <WeatherLayersPanel
+          onLayerChange={handleWeatherLayerChange}
+          selectedLayer={currentWeatherLayer}
+          isDisabled={timeSliderIndex !== 0}
+          disabledMessage="Weather layers only available for current weather"
+        />
+      </div>
 
       {/* Weather Panel positioned in bottom right corner */}
       <div className="absolute bottom-16 right-6 z-10">

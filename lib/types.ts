@@ -26,11 +26,6 @@ export interface ReverseGeocodingResponse {
   source: string;
 }
 
-export interface MapSearchResult {
-  id: number;
-  name: string;
-  coordinates: [number, number];
-}
 
 // OpenWeatherMap Current Weather API Types based on official documentation
 export interface CurrentWeatherData {
@@ -165,6 +160,16 @@ export interface WeatherParams {
 export interface ForecastParams extends WeatherParams {
   cnt?: number; // Number of timestamps to return
 }
+
+// Weather Map Layers API Types
+export type WeatherLayerType = 
+  | 'precipitation' 
+  | 'clouds' 
+  | 'temperature' 
+  | 'wind_arrows'
+  | 'pressure';
+
+// Legacy Weather Map types removed - using API route approach
 
 // Generic API response wrapper
 export interface ApiResponse<T> {
